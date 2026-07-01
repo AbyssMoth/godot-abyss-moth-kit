@@ -1,0 +1,30 @@
+{
+	"schema": 1,
+	"folders": [
+		"res://abyss_moth/art",
+		"res://abyss_moth/audio",
+		"res://abyss_moth/codebase",
+		"res://abyss_moth/data",
+		"res://abyss_moth/fonts",
+		"res://abyss_moth/localization",
+		"res://abyss_moth/scenes",
+		"res://abyss_moth/styles",
+		"res://abyss_moth/themes",
+		"res://docs",
+		"res://abyss_moth/codebase/_core",
+		"res://abyss_moth/codebase/autoload",
+		"res://abyss_moth/codebase/audio",
+		"res://abyss_moth/codebase/features",
+		"res://abyss_moth/codebase/services",
+		"res://abyss_moth/codebase/ui"
+	],
+	"colors": {
+		"res://abyss_moth/art/": "purple",
+		"res://abyss_moth/codebase/": "green",
+		"res://abyss_moth/data/": "red",
+		"res://abyss_moth/scenes/": "gray",
+		"res://abyss_moth/styles/": "purple",
+		"res://abyss_moth/themes/": "purple",
+		"res://docs/": "red"
+	}
+}

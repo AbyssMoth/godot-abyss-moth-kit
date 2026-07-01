@@ -1,0 +1,36 @@
+{
+	"schema": 1,
+	"default_branch": "main",
+	"packages": [
+		{
+			"name": "reactive",
+			"display_name": "Godot Reactive",
+			"owner": "AbyssMoth",
+			"repo": "godot-reactive",
+			"branch": "main",
+			"install_name": "reactive",
+			"plugin_dir": "abyss_moth/reactive",
+			"repository_url": "https://github.com/AbyssMoth/godot-reactive",
+			"library_style": true,
+			"public": true,
+			"description": "Реактивные свойства и observables (библиотека, class_name globals)."
+		},
+		{
+			"name": "save",
+			"display_name": "Godot Save",
+			"owner": "AbyssMoth",
+			"repo": "godot-save",
+			"branch": "main",
+			"install_name": "save",
+			"plugin_dir": "abyss_moth/save",
+			"repository_url": "https://github.com/AbyssMoth/godot-save",
+			"library_style": true,
+			"public": true,
+			"description": "Сохранение состояния в JSON (библиотека, class_name globals)."
+		}
+	],
+	"presets": {
+		"base": ["reactive", "save"],
+		"mobile_2d": ["reactive", "save"]
+	}
+}
