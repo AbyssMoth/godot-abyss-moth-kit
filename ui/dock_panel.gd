@@ -13,7 +13,6 @@ const KitLogger := preload("res://addons/abyss_moth/abyss_moth_kit/core/logger.g
 
 const CATALOG_PATH := "res://addons/abyss_moth/abyss_moth_kit/data/catalog.json"
 const LOCK_PATH := "res://addons/abyss_moth/abyss_moth_kit/data/abyss_lock.json"
-const ADDONS_ROOT := "res://addons/abyss_moth"
 
 const COL_GREEN := Color(0.45, 0.85, 0.45)
 const COL_YELLOW := Color(0.95, 0.8, 0.35)
@@ -58,6 +57,15 @@ func _ready() -> void:
 	_build_ui()
 	_refresh_status()
 	_log("Готов. Аддонов в каталоге: %d." % _catalog.get("packages", []).size())
+
+# --- пути ---
+
+func _plugin_dir(install_name: String) -> String:
+	var pkg: Dictionary = _rows[install_name]["pkg"]
+	return pkg.get("plugin_dir", "abyss_moth/" + install_name)
+
+func _install_path(install_name: String) -> String:
+	return "res://addons/" + _plugin_dir(install_name)
 
 # --- построение UI ---
 
@@ -211,29 +219,29 @@ func _install_batch(pkgs: Array, force: bool) -> void:
 	_set_buttons_disabled(true)
 
 	var installed_names: Array = []
-	var library_hits: Array = []
+	var restart_hits: Array = []
 	for pkg in pkgs:
 		var install_name: String = pkg.get("install_name", pkg.get("repo", ""))
-		var present := DirAccess.dir_exists_absolute("%s/%s" % [ADDONS_ROOT, install_name])
+		var present := DirAccess.dir_exists_absolute(_install_path(install_name))
 		if present and not force:
 			_log("%s уже установлен, пропускаю (для обновления: Проверить обновления)." % install_name)
 			continue
 		var ok_name: String = await _installer.install(pkg)
 		if ok_name != "":
 			installed_names.append(ok_name)
-			if pkg.get("library_style", false):
-				library_hits.append(ok_name)
+			if pkg.get("library_style", false) or pkg.get("declares_autoloads", false):
+				restart_hits.append(ok_name)
 
 	if installed_names.is_empty():
 		_log("Нечего устанавливать.")
 	else:
-		await _enable_installed(installed_names, library_hits)
+		await _enable_installed(installed_names, restart_hits)
 
 	_set_buttons_disabled(false)
 	_busy = false
 	_refresh_status()
 
-func _enable_installed(names: Array, library_hits: Array) -> void:
+func _enable_installed(names: Array, restart_hits: Array) -> void:
 	_log("Обновляю файловую систему...")
 	var efs := EditorInterface.get_resource_filesystem()
 	if not efs.is_scanning():
@@ -243,12 +251,13 @@ func _enable_installed(names: Array, library_hits: Array) -> void:
 	await get_tree().process_frame
 	var enabled_list: PackedStringArray = ProjectSettings.get_setting("editor_plugins/enabled", PackedStringArray())
 	for n in names:
-		var cfg := "res://addons/abyss_moth/%s/plugin.cfg" % n
+		var plugin_dir := _plugin_dir(n)
+		var cfg := "res://addons/" + plugin_dir + "/plugin.cfg"
 		if not (cfg in enabled_list):
-			EditorInterface.set_plugin_enabled("abyss_moth/" + n, true)
+			EditorInterface.set_plugin_enabled(plugin_dir, true)
 	_log("Включено: " + ", ".join(PackedStringArray(names)))
-	if not library_hits.is_empty():
-		_log("Подсказка: для [%s] перезапустите редактор, чтобы class_name-глобалы подхватились." % ", ".join(PackedStringArray(library_hits)))
+	if not restart_hits.is_empty():
+		_log("Подсказка: для [%s] перезапустите редактор (autoload / class_name-глобалы подхватятся)." % ", ".join(PackedStringArray(restart_hits)))
 
 func _on_check_updates() -> void:
 	if _busy:
@@ -266,7 +275,7 @@ func _on_check_updates() -> void:
 
 	for install_name in _rows.keys():
 		var pkg: Dictionary = _rows[install_name]["pkg"]
-		var present := DirAccess.dir_exists_absolute("%s/%s" % [ADDONS_ROOT, install_name])
+		var present := DirAccess.dir_exists_absolute(_install_path(install_name))
 		if not (present and installed.has(install_name)):
 			continue
 		checked += 1
@@ -321,6 +330,7 @@ func _on_show_info(install_name: String) -> void:
 	lines.append("")
 	lines.append("Репозиторий: %s/%s" % [pkg.get("owner", ""), pkg.get("repo", "")])
 	lines.append("Ветка: %s" % pkg.get("branch", "main"))
+	lines.append("Ставится в: %s" % _install_path(install_name))
 	if entry.is_empty():
 		lines.append("Статус: не установлен")
 	else:
@@ -343,7 +353,7 @@ func _on_info_action(action: StringName) -> void:
 func _refresh_status() -> void:
 	var installed: Dictionary = _read_lock().get("installed", {})
 	for install_name in _rows.keys():
-		var present := DirAccess.dir_exists_absolute("%s/%s" % [ADDONS_ROOT, install_name])
+		var present := DirAccess.dir_exists_absolute(_install_path(install_name))
 		if present and installed.has(install_name):
 			var entry: Dictionary = installed[install_name]
 			var ver: String = str(entry.get("installed_plugin_version", ""))

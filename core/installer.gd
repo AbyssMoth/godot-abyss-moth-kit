@@ -2,11 +2,14 @@
 extends RefCounted
 
 # Конвейер установки одного аддона:
-# download -> распаковка zip со стрипом верхней папки -> атомарный swap ->
-# чтение версии из plugin.cfg + baseline sha через version_check -> запись lock.
+# download -> распаковка zip (стрип верхней папки + опц. source_subdir) ->
+# атомарный swap -> чтение версии из plugin.cfg + baseline sha -> запись lock.
 # scan() и set_plugin_enabled() выполняет вызывающая панель (один раз на батч).
+#
+# Путь установки берётся из pkg.plugin_dir (относительно res://addons/), что
+# позволяет ставить не только под abyss_moth/, но и сторонние аддоны (например
+# godot_ai в addons/godot_ai/, с распаковкой подпапки репо source_subdir).
 
-const ADDONS_ROOT := "res://addons/abyss_moth"
 const LOCK_PATH := "res://addons/abyss_moth/abyss_moth_kit/data/abyss_lock.json"
 const TMP_DIR := "user://abyss_moth_tmp"
 
@@ -29,7 +32,10 @@ func install(pkg: Dictionary) -> String:
 	var repo: String = pkg.get("repo", "")
 	var branch: String = pkg.get("branch", "main")
 	var install_name: String = pkg.get("install_name", repo)
-	_emit("Установка %s (%s/%s@%s)..." % [install_name, owner, repo, branch])
+	var plugin_dir: String = pkg.get("plugin_dir", "abyss_moth/" + install_name)
+	var source_subdir: String = pkg.get("source_subdir", "")
+	var final_dir := "res://addons/" + plugin_dir
+	_emit("Установка %s (%s/%s@%s) -> %s" % [install_name, owner, repo, branch, final_dir])
 
 	var zip_path := "%s/%s.zip" % [TMP_DIR, install_name]
 	var dl: Dictionary = await _client.download_branch_zip(owner, repo, branch, zip_path)
@@ -38,24 +44,25 @@ func install(pkg: Dictionary) -> String:
 		return ""
 
 	# Распаковываем в скрытую временную папку рядом с целью (тот же том - быстрый rename).
-	# Имя с ведущей точкой, чтобы Godot не пытался импортировать её во время распаковки.
-	var tmp_extract := "%s/.%s__tmp" % [ADDONS_ROOT, install_name]
+	var parent := final_dir.get_base_dir()
+	var leaf := final_dir.get_file()
+	var tmp_extract := "%s/.%s__tmp" % [parent, leaf]
 	_rm_rf(tmp_extract)
-	if not _extract_strip_top(zip_path, tmp_extract):
-		_emit("  ошибка распаковки zip")
+	if not _extract(zip_path, tmp_extract, source_subdir):
+		_emit("  ошибка распаковки zip (проверьте source_subdir)")
 		_rm_rf(tmp_extract)
 		return ""
 
 	# Атомарный swap: убираем старую установку и переносим временную на её место.
-	var final_dir := "%s/%s" % [ADDONS_ROOT, install_name]
 	_rm_rf(final_dir)
+	DirAccess.make_dir_recursive_absolute(parent)
 	var rename_err := DirAccess.rename_absolute(tmp_extract, final_dir)
 	if rename_err != OK:
 		_emit("  ошибка переноса в %s (err=%s)" % [final_dir, rename_err])
 		_rm_rf(tmp_extract)
 		return ""
 
-	var version := _read_installed_version(install_name)
+	var version := _read_installed_version(final_dir)
 	var sha := ""
 	var vr: Dictionary = await _version_check.get_remote_sha(owner, repo, branch)
 	if vr.get("ok", false):
@@ -72,11 +79,16 @@ func install(pkg: Dictionary) -> String:
 	_emit("  готово: %s%s" % [install_name, tail])
 	return install_name
 
-func _extract_strip_top(zip_user_path: String, dest_dir: String) -> bool:
+# Распаковка со стрипом верхней папки архива и опциональным source_subdir.
+# source_subdir="plugin/addons/godot_ai" -> в dest_dir попадёт только содержимое этой подпапки.
+func _extract(zip_user_path: String, dest_dir: String, source_subdir: String) -> bool:
 	var reader := ZIPReader.new()
 	var abs_zip := ProjectSettings.globalize_path(zip_user_path)
 	if reader.open(abs_zip) != OK:
 		return false
+	var sub := source_subdir.strip_edges()
+	if sub != "" and not sub.ends_with("/"):
+		sub += "/"
 	var any := false
 	for entry in reader.get_files():
 		if entry.ends_with("/"):
@@ -84,6 +96,12 @@ func _extract_strip_top(zip_user_path: String, dest_dir: String) -> bool:
 		var rel := _strip_top(entry)
 		if rel == "":
 			continue
+		if sub != "":
+			if not rel.begins_with(sub):
+				continue
+			rel = rel.substr(sub.length())
+			if rel == "":
+				continue
 		var dest := dest_dir.path_join(rel)
 		DirAccess.make_dir_recursive_absolute(dest.get_base_dir())
 		var f := FileAccess.open(dest, FileAccess.WRITE)
@@ -102,8 +120,8 @@ static func _strip_top(entry: String) -> String:
 	return entry.substr(idx + 1)
 
 # Читает version из установленного plugin.cfg (если есть).
-func _read_installed_version(install_name: String) -> String:
-	var cfg_path := "%s/%s/plugin.cfg" % [ADDONS_ROOT, install_name]
+func _read_installed_version(final_dir: String) -> String:
+	var cfg_path := final_dir + "/plugin.cfg"
 	if not FileAccess.file_exists(cfg_path):
 		return ""
 	var cf := ConfigFile.new()

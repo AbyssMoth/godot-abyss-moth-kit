@@ -27,10 +27,39 @@
 			"library_style": true,
 			"public": true,
 			"description": "Сохранение состояния в JSON (библиотека, class_name globals)."
+		},
+		{
+			"name": "export_sanitizer",
+			"display_name": "Export Sanitizer",
+			"owner": "AbyssMoth",
+			"repo": "godot-export-sanitizer",
+			"branch": "main",
+			"install_name": "export_sanitizer",
+			"plugin_dir": "abyss_moth/export_sanitizer",
+			"repository_url": "https://github.com/AbyssMoth/godot-export-sanitizer",
+			"library_style": false,
+			"public": true,
+			"description": "Убирает dev-инструменты и их следы из экспортных сборок по конфигу с профилями (common/web/android)."
+		},
+		{
+			"name": "godot_ai",
+			"display_name": "Godot AI (MCP)",
+			"owner": "hi-godot",
+			"repo": "godot-ai",
+			"branch": "main",
+			"install_name": "godot_ai",
+			"plugin_dir": "godot_ai",
+			"source_subdir": "plugin/addons/godot_ai",
+			"repository_url": "https://github.com/hi-godot/godot-ai",
+			"library_style": false,
+			"declares_autoloads": true,
+			"public": true,
+			"description": "MCP-мост редактор <-> AI (dev-инструмент). Ставится только editor-аддон в addons/godot_ai; сам MCP-сервер запускается через uvx отдельно."
 		}
 	],
 	"presets": {
-		"base": ["reactive", "save"],
-		"mobile_2d": ["reactive", "save"]
+		"base": ["reactive", "save", "export_sanitizer"],
+		"mobile_2d": ["reactive", "save"],
+		"dev_tools": ["godot_ai"]
 	}
 }
