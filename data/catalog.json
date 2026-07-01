@@ -42,6 +42,19 @@
 			"description": "Убирает dev-инструменты и их следы из экспортных сборок по конфигу с профилями (common/web/android)."
 		},
 		{
+			"name": "atlas_forge",
+			"display_name": "Atlas Forge",
+			"owner": "AbyssMoth",
+			"repo": "godot-atlas-forge",
+			"branch": "main",
+			"install_name": "atlas_forge",
+			"plugin_dir": "abyss_moth/atlas_forge",
+			"repository_url": "https://github.com/AbyssMoth/godot-atlas-forge",
+			"library_style": false,
+			"public": true,
+			"description": "Слайсер атласов: сетка + авто по альфа-кляксам, рефреш с сохранением UID."
+		},
+		{
 			"name": "godot_ai",
 			"display_name": "Godot AI (MCP)",
 			"owner": "hi-godot",
@@ -60,6 +73,6 @@
 	"presets": {
 		"base": ["reactive", "save", "export_sanitizer"],
 		"mobile_2d": ["reactive", "save"],
-		"dev_tools": ["godot_ai"]
+		"dev_tools": ["godot_ai", "atlas_forge"]
 	}
 }
