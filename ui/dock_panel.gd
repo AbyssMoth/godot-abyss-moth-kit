@@ -2,16 +2,17 @@
 extends VBoxContainer
 
 # Dock-панель менеджера пакетов Abyss Moth Kit.
-# UI строится программно (без .tscn): прокручиваемый список аддонов из catalog.json
-# со статусом и цветом, карточка аддона, установка/обновление, инициализация папок и лог.
+# Группы studio/fork/external со сворачиванием, секция наборов, редактор каталога,
+# установка/обновление/деинсталляция, нативные иконки редактора, лог (дублируется в файл).
 
 const GithubClient := preload("res://addons/abyss_moth/abyss_moth_kit/core/github_client.gd")
 const Installer := preload("res://addons/abyss_moth/abyss_moth_kit/core/installer.gd")
 const VersionCheck := preload("res://addons/abyss_moth/abyss_moth_kit/core/version_check.gd")
 const FolderInit := preload("res://addons/abyss_moth/abyss_moth_kit/core/folder_init.gd")
 const KitLogger := preload("res://addons/abyss_moth/abyss_moth_kit/core/logger.gd")
+const CatalogStore := preload("res://addons/abyss_moth/abyss_moth_kit/core/catalog_store.gd")
+const CatalogEditor := preload("res://addons/abyss_moth/abyss_moth_kit/ui/catalog_editor.gd")
 
-const CATALOG_PATH := "res://addons/abyss_moth/abyss_moth_kit/data/catalog.json"
 const LOCK_PATH := "res://addons/abyss_moth/abyss_moth_kit/data/abyss_lock.json"
 
 const COL_GREEN := Color(0.45, 0.85, 0.45)
@@ -19,6 +20,12 @@ const COL_YELLOW := Color(0.95, 0.8, 0.35)
 const COL_RED := Color(0.9, 0.45, 0.45)
 const COL_GRAY := Color(1, 1, 1, 0.5)
 const COL_WHITE := Color(1, 1, 1, 0.85)
+
+const KIND_GROUPS := [
+	{"kind": "studio", "title": "Студийные"},
+	{"kind": "fork", "title": "Форки"},
+	{"kind": "external", "title": "Внешние"},
+]
 
 var _http: HTTPRequest
 var _client
@@ -28,12 +35,16 @@ var _folder_init
 var _logger
 
 var _catalog: Dictionary = {}
-var _rows: Dictionary = {}            # install_name -> { pkg, status: Label, action: Button, state: String }
-var _action_buttons: Array = []
-var _list_box: VBoxContainer
+var _rows: Dictionary = {}
+var _static_buttons: Array = []
+var _dynamic_buttons: Array = []
+var _dynamic: VBoxContainer
 var _log_label: RichTextLabel
 var _info_dialog: AcceptDialog
+var _confirm_dialog: ConfirmationDialog
+var _editor_dialog: AcceptDialog
 var _info_url := ""
+var _pending_uninstall := ""
 var _busy := false
 var _built := false
 
@@ -42,7 +53,7 @@ func _ready() -> void:
 		return
 	_built = true
 	name = "Abyss Moth"
-	custom_minimum_size = Vector2(300, 0)
+	custom_minimum_size = Vector2(320, 0)
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	_http = HTTPRequest.new()
@@ -53,10 +64,207 @@ func _ready() -> void:
 	_installer = Installer.new(_client, _version_check, Callable(self, "_log"))
 	_folder_init = FolderInit.new(Callable(self, "_log"))
 
-	_catalog = _load_catalog()
-	_build_ui()
-	_refresh_status()
+	_catalog = CatalogStore.load_catalog()
+	_build_static_ui()
+	_rebuild_dynamic()
 	_log("Готов. Аддонов в каталоге: %d." % _catalog.get("packages", []).size())
+
+# --- статичный каркас ---
+
+func _build_static_ui() -> void:
+	add_theme_constant_override("separation", 6)
+
+	var header := HBoxContainer.new()
+	add_child(header)
+	var title := Label.new()
+	title.text = "Abyss Moth Kit"
+	title.add_theme_font_size_override("font_size", 16)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+	var gear := Button.new()
+	gear.icon = _icon("Tools")
+	gear.tooltip_text = "Добавить репозиторий в каталог"
+	gear.pressed.connect(_open_catalog_editor)
+	header.add_child(gear)
+	_static_buttons.append(gear)
+
+	var hint := Label.new()
+	hint.text = "Менеджер студийных аддонов"
+	hint.modulate = Color(1, 1, 1, 0.6)
+	add_child(hint)
+
+	add_child(HSeparator.new())
+
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.custom_minimum_size = Vector2(0, 220)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	add_child(scroll)
+	_dynamic = VBoxContainer.new()
+	_dynamic.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_dynamic)
+
+	add_child(HSeparator.new())
+
+	var actions := HBoxContainer.new()
+	add_child(actions)
+	var check_btn := Button.new()
+	check_btn.text = "Проверить обновления"
+	check_btn.icon = _icon("Search")
+	check_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	check_btn.pressed.connect(_on_check_updates)
+	actions.add_child(check_btn)
+	_static_buttons.append(check_btn)
+	var updall_btn := Button.new()
+	updall_btn.text = "Обновить все"
+	updall_btn.icon = _icon("Reload")
+	updall_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	updall_btn.pressed.connect(_on_update_all)
+	actions.add_child(updall_btn)
+	_static_buttons.append(updall_btn)
+
+	var folders_btn := Button.new()
+	folders_btn.text = "Инициализировать папки"
+	folders_btn.icon = _icon("Folder")
+	folders_btn.pressed.connect(_on_init_folders)
+	add_child(folders_btn)
+	_static_buttons.append(folders_btn)
+
+	add_child(HSeparator.new())
+
+	var log_title := Label.new()
+	log_title.text = "Лог"
+	add_child(log_title)
+	_log_label = RichTextLabel.new()
+	_log_label.scroll_active = true
+	_log_label.custom_minimum_size = Vector2(0, 110)
+	add_child(_log_label)
+
+	_info_dialog = AcceptDialog.new()
+	_info_dialog.title = "Аддон"
+	_info_dialog.add_button("Открыть на GitHub", true, "github")
+	_info_dialog.custom_action.connect(_on_info_action)
+	add_child(_info_dialog)
+
+	_confirm_dialog = ConfirmationDialog.new()
+	_confirm_dialog.title = "Удалить аддон"
+	_confirm_dialog.confirmed.connect(_do_uninstall)
+	add_child(_confirm_dialog)
+
+	_editor_dialog = CatalogEditor.new()
+	_editor_dialog.catalog_changed.connect(_on_catalog_changed)
+	add_child(_editor_dialog)
+
+# --- динамическая часть (наборы + группы) ---
+
+func _rebuild_dynamic() -> void:
+	for child in _dynamic.get_children():
+		child.queue_free()
+	_rows.clear()
+	_dynamic_buttons.clear()
+
+	# Наборы (категории)
+	var presets: Dictionary = _catalog.get("presets", {})
+	if not presets.is_empty():
+		var sets_box := _add_foldable(_dynamic, "Наборы (категории)", false)
+		for pname in presets.keys():
+			_build_preset_row(sets_box, str(pname), presets[pname])
+
+	# Пакеты по типам
+	var packages: Array = _catalog.get("packages", [])
+	for group in KIND_GROUPS:
+		var members: Array = []
+		for pkg in packages:
+			if str(pkg.get("kind", "studio")) == group["kind"]:
+				members.append(pkg)
+		if members.is_empty():
+			continue
+		var box := _add_foldable(_dynamic, "%s (%d)" % [group["title"], members.size()], false)
+		for pkg in members:
+			_build_row(box, pkg)
+
+	_refresh_status()
+
+func _add_foldable(parent: VBoxContainer, title_text: String, folded: bool) -> VBoxContainer:
+	var header := Button.new()
+	header.toggle_mode = true
+	header.button_pressed = not folded
+	header.text = title_text
+	header.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	header.flat = true
+	var content := VBoxContainer.new()
+	content.visible = not folded
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.icon = _icon("GuiTreeArrowDown") if not folded else _icon("GuiTreeArrowRight")
+	header.toggled.connect(func(pressed):
+		content.visible = pressed
+		header.icon = _icon("GuiTreeArrowDown") if pressed else _icon("GuiTreeArrowRight"))
+	parent.add_child(header)
+	parent.add_child(content)
+	return content
+
+func _build_preset_row(parent: VBoxContainer, pname: String, members: Array) -> void:
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var label := Label.new()
+	var names: PackedStringArray = PackedStringArray()
+	for m in members:
+		names.append(str(m))
+	label.text = "%s: %s" % [pname, ", ".join(names)]
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	var btn := Button.new()
+	btn.text = "Установить"
+	btn.icon = _icon("Add")
+	btn.pressed.connect(_on_install_preset.bind(pname))
+	row.add_child(btn)
+	parent.add_child(row)
+	_dynamic_buttons.append(btn)
+
+func _build_row(parent: VBoxContainer, pkg: Dictionary) -> void:
+	var install_name: String = pkg.get("install_name", pkg.get("repo", "?"))
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var name_btn := Button.new()
+	name_btn.text = pkg.get("display_name", install_name)
+	name_btn.icon = _icon("Tools")
+	name_btn.flat = true
+	name_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	name_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_btn.tooltip_text = "Открыть карточку аддона"
+	name_btn.pressed.connect(_on_show_info.bind(install_name))
+	row.add_child(name_btn)
+
+	var status := Label.new()
+	status.text = "..."
+	status.custom_minimum_size = Vector2(74, 0)
+	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(status)
+
+	var action := Button.new()
+	action.text = "Установить"
+	action.pressed.connect(_on_row_action.bind(install_name))
+	row.add_child(action)
+
+	var uninstall := Button.new()
+	uninstall.icon = _icon("Remove")
+	uninstall.tooltip_text = "Удалить (папка + запись в lock)"
+	uninstall.pressed.connect(_on_uninstall.bind(install_name))
+	row.add_child(uninstall)
+
+	parent.add_child(row)
+	_rows[install_name] = {"pkg": pkg, "status": status, "action": action, "uninstall": uninstall, "state": "absent"}
+	_dynamic_buttons.append(action)
+	_dynamic_buttons.append(uninstall)
+
+# --- иконки ---
+
+func _icon(icon_name: String) -> Texture2D:
+	if has_theme_icon(icon_name, "EditorIcons"):
+		return get_theme_icon(icon_name, "EditorIcons")
+	return null
 
 # --- пути ---
 
@@ -67,112 +275,19 @@ func _plugin_dir(install_name: String) -> String:
 func _install_path(install_name: String) -> String:
 	return "res://addons/" + _plugin_dir(install_name)
 
-# --- построение UI ---
+# --- каталог: редактор ---
 
-func _build_ui() -> void:
-	add_theme_constant_override("separation", 6)
+func _open_catalog_editor() -> void:
+	_editor_dialog.open_new(_catalog)
 
-	var title := Label.new()
-	title.text = "Abyss Moth Kit"
-	title.add_theme_font_size_override("font_size", 16)
-	add_child(title)
+func _on_catalog_changed() -> void:
+	_catalog = CatalogStore.load_catalog()
+	_rebuild_dynamic()
+	_log("Каталог обновлён. Пакетов: %d." % _catalog.get("packages", []).size())
 
-	var hint := Label.new()
-	hint.text = "Менеджер студийных аддонов"
-	hint.modulate = Color(1, 1, 1, 0.6)
-	add_child(hint)
-
-	add_child(HSeparator.new())
-
-	# Прокручиваемый список - на случай десятков аддонов.
-	var scroll := ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.custom_minimum_size = Vector2(0, 180)
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	add_child(scroll)
-
-	_list_box = VBoxContainer.new()
-	_list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_list_box)
-
-	for pkg in _catalog.get("packages", []):
-		_build_row(pkg)
-
-	add_child(HSeparator.new())
-
-	var base_btn := Button.new()
-	base_btn.text = "Установить набор base"
-	base_btn.pressed.connect(_on_install_base)
-	add_child(base_btn)
-	_action_buttons.append(base_btn)
-
-	var bottom := HBoxContainer.new()
-	add_child(bottom)
-	var check_btn := Button.new()
-	check_btn.text = "Проверить обновления"
-	check_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	check_btn.pressed.connect(_on_check_updates)
-	bottom.add_child(check_btn)
-	_action_buttons.append(check_btn)
-	var updall_btn := Button.new()
-	updall_btn.text = "Обновить все"
-	updall_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	updall_btn.pressed.connect(_on_update_all)
-	bottom.add_child(updall_btn)
-	_action_buttons.append(updall_btn)
-
-	var folders_btn := Button.new()
-	folders_btn.text = "Инициализировать папки"
-	folders_btn.pressed.connect(_on_init_folders)
-	add_child(folders_btn)
-	_action_buttons.append(folders_btn)
-
-	add_child(HSeparator.new())
-
-	var log_title := Label.new()
-	log_title.text = "Лог"
-	add_child(log_title)
-
-	_log_label = RichTextLabel.new()
-	_log_label.scroll_active = true
-	_log_label.custom_minimum_size = Vector2(0, 120)
-	add_child(_log_label)
-
-	_info_dialog = AcceptDialog.new()
-	_info_dialog.title = "Аддон"
-	_info_dialog.add_button("Открыть на GitHub", true, "github")
-	_info_dialog.custom_action.connect(_on_info_action)
-	add_child(_info_dialog)
-
-func _build_row(pkg: Dictionary) -> void:
-	var install_name: String = pkg.get("install_name", pkg.get("repo", "?"))
-	var row := HBoxContainer.new()
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	# Имя - кнопка, открывает карточку аддона (инфо + ссылка на GitHub).
-	var name_btn := Button.new()
-	name_btn.text = pkg.get("display_name", install_name)
-	name_btn.flat = true
-	name_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	name_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_btn.tooltip_text = "Открыть карточку аддона"
-	name_btn.pressed.connect(_on_show_info.bind(install_name))
-	row.add_child(name_btn)
-
-	var status := Label.new()
-	status.text = "..."
-	status.custom_minimum_size = Vector2(78, 0)
-	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	row.add_child(status)
-
-	var action := Button.new()
-	action.text = "Установить"
-	action.pressed.connect(_on_row_action.bind(install_name))
-	row.add_child(action)
-
-	_list_box.add_child(row)
-	_rows[install_name] = {"pkg": pkg, "status": status, "action": action, "state": "absent"}
-	_action_buttons.append(action)
+func _reload_catalog() -> void:
+	_catalog = CatalogStore.load_catalog()
+	_rebuild_dynamic()
 
 # --- действия ---
 
@@ -182,14 +297,16 @@ func _on_row_action(install_name: String) -> void:
 		return
 	await _install_batch([_rows[install_name]["pkg"]], true)
 
-func _on_install_base() -> void:
+func _on_install_preset(pname: String) -> void:
 	if _busy:
 		_log("Занято, дождитесь завершения.")
 		return
-	var pkgs := _resolve_preset(_catalog.get("presets", {}).get("base", []))
+	var members: Array = _catalog.get("presets", {}).get(pname, [])
+	var pkgs := _resolve_preset(members)
 	if pkgs.is_empty():
-		_log("Набор base пуст или не найден в catalog.json.")
+		_log("Набор %s пуст или пакеты не найдены." % pname)
 		return
+	_log("Установка набора %s..." % pname)
 	await _install_batch(pkgs, false)
 
 func _on_update_all() -> void:
@@ -212,8 +329,46 @@ func _on_init_folders() -> void:
 	_log("Инициализация структуры папок...")
 	_folder_init.run()
 
-# force=false: пропускать уже установленные (защита кнопки base).
-# force=true: явная (пере)установка или обновление по клику в строке.
+func _on_uninstall(install_name: String) -> void:
+	if _busy:
+		_log("Занято, дождитесь завершения.")
+		return
+	if not DirAccess.dir_exists_absolute(_install_path(install_name)):
+		_log("%s не установлен." % install_name)
+		return
+	_pending_uninstall = install_name
+	_confirm_dialog.dialog_text = "Удалить %s?\nПапка %s и запись в lock будут удалены. Ссылки в проекте на этот аддон перестанут работать." % [install_name, _install_path(install_name)]
+	_confirm_dialog.popup_centered()
+
+func _do_uninstall() -> void:
+	var install_name := _pending_uninstall
+	_pending_uninstall = ""
+	if install_name == "" or not _rows.has(install_name):
+		return
+	var plugin_dir := _plugin_dir(install_name)
+	var dir := "res://addons/" + plugin_dir
+	var enabled: PackedStringArray = ProjectSettings.get_setting("editor_plugins/enabled", PackedStringArray())
+	if ("res://addons/" + plugin_dir + "/plugin.cfg") in enabled:
+		EditorInterface.set_plugin_enabled(plugin_dir, false)
+	Installer._rm_rf(dir)
+	_remove_lock_entry(install_name)
+	var efs := EditorInterface.get_resource_filesystem()
+	if not efs.is_scanning():
+		efs.scan()
+	_log("Удалён: %s (папка %s + запись в lock)." % [install_name, dir])
+	_rebuild_dynamic()
+
+func _remove_lock_entry(install_name: String) -> void:
+	var lock := _read_lock()
+	var installed: Dictionary = lock.get("installed", {})
+	if installed.has(install_name):
+		installed.erase(install_name)
+		lock["installed"] = installed
+		var f := FileAccess.open(LOCK_PATH, FileAccess.WRITE)
+		if f != null:
+			f.store_string(JSON.stringify(lock, "\t"))
+			f.close()
+
 func _install_batch(pkgs: Array, force: bool) -> void:
 	_busy = true
 	_set_buttons_disabled(true)
@@ -222,9 +377,9 @@ func _install_batch(pkgs: Array, force: bool) -> void:
 	var restart_hits: Array = []
 	for pkg in pkgs:
 		var install_name: String = pkg.get("install_name", pkg.get("repo", ""))
-		var present := DirAccess.dir_exists_absolute(_install_path(install_name))
+		var present := DirAccess.dir_exists_absolute("res://addons/" + str(pkg.get("plugin_dir", "abyss_moth/" + install_name)))
 		if present and not force:
-			_log("%s уже установлен, пропускаю (для обновления: Проверить обновления)." % install_name)
+			_log("%s уже установлен, пропускаю." % install_name)
 			continue
 		var ok_name: String = await _installer.install(pkg)
 		if ok_name != "":
@@ -257,7 +412,7 @@ func _enable_installed(names: Array, restart_hits: Array) -> void:
 			EditorInterface.set_plugin_enabled(plugin_dir, true)
 	_log("Включено: " + ", ".join(PackedStringArray(names)))
 	if not restart_hits.is_empty():
-		_log("Подсказка: для [%s] перезапустите редактор (autoload / class_name-глобалы подхватятся)." % ", ".join(PackedStringArray(restart_hits)))
+		_log("Подсказка: для [%s] перезапустите редактор (autoload / class_name-глобалы)." % ", ".join(PackedStringArray(restart_hits)))
 
 func _on_check_updates() -> void:
 	if _busy:
@@ -275,8 +430,7 @@ func _on_check_updates() -> void:
 
 	for install_name in _rows.keys():
 		var pkg: Dictionary = _rows[install_name]["pkg"]
-		var present := DirAccess.dir_exists_absolute(_install_path(install_name))
-		if not (present and installed.has(install_name)):
+		if not (DirAccess.dir_exists_absolute(_install_path(install_name)) and installed.has(install_name)):
 			continue
 		checked += 1
 		var local_sha: String = str(installed[install_name].get("installed_sha", ""))
@@ -285,7 +439,7 @@ func _on_check_updates() -> void:
 			net_errors += 1
 			if r.get("offline", false):
 				_set_state(install_name, "offline", "нет сети")
-				_log("  %s: нет сети, проверка недоступна." % install_name)
+				_log("  %s: нет сети." % install_name)
 			else:
 				_set_state(install_name, "error", "ошибка")
 				_log("  %s: ошибка проверки." % install_name)
@@ -294,18 +448,18 @@ func _on_check_updates() -> void:
 		if local_sha == "":
 			untracked += 1
 			_set_state(install_name, "untracked", "переустан.")
-			_log("  %s: версия не зафиксирована. Переустановите 1 раз для трекинга (upstream %s)." % [install_name, remote_sha.substr(0, 7)])
+			_log("  %s: версия не зафиксирована, переустановите (upstream %s)." % [install_name, remote_sha.substr(0, 7)])
 		elif remote_sha == local_sha:
 			_set_state(install_name, "uptodate", "актуально")
 			_log("  %s: актуально (%s)." % [install_name, local_sha.substr(0, 7)])
 		else:
 			updates += 1
 			_set_state(install_name, "update", "обновление")
-			_log("  %s: доступно обновление %s -> %s." % [install_name, local_sha.substr(0, 7), remote_sha.substr(0, 7)])
+			_log("  %s: обновление %s -> %s." % [install_name, local_sha.substr(0, 7), remote_sha.substr(0, 7)])
 
 	var summary := ""
 	if checked == 0:
-		summary = "Установленных аддонов нет - проверять нечего."
+		summary = "Установленных аддонов нет."
 	else:
 		summary = "Проверено: %d. Обновлений: %d." % [checked, updates]
 		if updates == 0 and untracked == 0 and net_errors == 0:
@@ -328,6 +482,7 @@ func _on_show_info(install_name: String) -> void:
 	var lines: Array = []
 	lines.append(str(pkg.get("description", "")))
 	lines.append("")
+	lines.append("Тип: %s" % _kind_ru(str(pkg.get("kind", "studio"))))
 	lines.append("Репозиторий: %s/%s" % [pkg.get("owner", ""), pkg.get("repo", "")])
 	lines.append("Ветка: %s" % pkg.get("branch", "main"))
 	lines.append("Ставится в: %s" % _install_path(install_name))
@@ -342,13 +497,19 @@ func _on_show_info(install_name: String) -> void:
 	lines.append("")
 	lines.append("URL: %s" % _info_url)
 	_info_dialog.dialog_text = "\n".join(PackedStringArray(lines))
-	_info_dialog.popup_centered(Vector2i(440, 0))
+	_info_dialog.popup_centered(Vector2i(460, 0))
 
 func _on_info_action(action: StringName) -> void:
 	if action == "github" and _info_url != "":
 		OS.shell_open(_info_url)
 
-# --- статус и вспомогательное ---
+func _kind_ru(kind: String) -> String:
+	match kind:
+		"external": return "внешний"
+		"fork": return "форк"
+		_: return "студийный"
+
+# --- статус ---
 
 func _refresh_status() -> void:
 	var installed: Dictionary = _read_lock().get("installed", {})
@@ -372,29 +533,38 @@ func _set_state(install_name: String, state: String, text: String) -> void:
 	row["state"] = state
 	var status: Label = row["status"]
 	var action: Button = row["action"]
+	var uninstall: Button = row["uninstall"]
 	status.text = text
+	uninstall.visible = state != "absent"
 	match state:
 		"absent":
 			status.modulate = COL_GRAY
 			action.text = "Установить"
-		"installed":
-			status.modulate = COL_WHITE
-			action.text = "Переустановить"
-		"untracked":
-			status.modulate = COL_YELLOW
-			action.text = "Переустановить"
-		"uptodate":
-			status.modulate = COL_GREEN
-			action.text = "Переустановить"
+			action.icon = _icon("Add")
 		"update":
 			status.modulate = COL_YELLOW
 			action.text = "Обновить"
+			action.icon = _icon("Reload")
+		"uptodate":
+			status.modulate = COL_GREEN
+			action.text = "Переустановить"
+			action.icon = _icon("Reload")
+		"untracked":
+			status.modulate = COL_YELLOW
+			action.text = "Переустановить"
+			action.icon = _icon("Reload")
 		"offline":
 			status.modulate = COL_GRAY
 			action.text = "Переустановить"
+			action.icon = _icon("Reload")
 		"error":
 			status.modulate = COL_RED
 			action.text = "Переустановить"
+			action.icon = _icon("Reload")
+		_:
+			status.modulate = COL_WHITE
+			action.text = "Переустановить"
+			action.icon = _icon("Reload")
 
 func _resolve_preset(names: Array) -> Array:
 	var by_name: Dictionary = {}
@@ -407,14 +577,11 @@ func _resolve_preset(names: Array) -> Array:
 	return out
 
 func _set_buttons_disabled(value: bool) -> void:
-	for btn in _action_buttons:
+	for btn in _static_buttons:
 		btn.disabled = value
-
-func _load_catalog() -> Dictionary:
-	if not FileAccess.file_exists(CATALOG_PATH):
-		return {}
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(CATALOG_PATH))
-	return data if typeof(data) == TYPE_DICTIONARY else {}
+	for btn in _dynamic_buttons:
+		if is_instance_valid(btn):
+			btn.disabled = value
 
 func _read_lock() -> Dictionary:
 	if not FileAccess.file_exists(LOCK_PATH):
