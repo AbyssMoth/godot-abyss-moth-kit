@@ -37,6 +37,7 @@ var _logger
 
 var _catalog: Dictionary = {}
 var _rows: Dictionary = {}
+var _preset_rows: Dictionary = {}
 var _static_buttons: Array = []
 var _dynamic_buttons: Array = []
 var _dynamic: VBoxContainer
@@ -162,6 +163,7 @@ func _rebuild_dynamic() -> void:
 	for child in _dynamic.get_children():
 		child.queue_free()
 	_rows.clear()
+	_preset_rows.clear()
 	_dynamic_buttons.clear()
 
 	# Наборы (категории)
@@ -227,13 +229,13 @@ func _build_preset_row(parent: VBoxContainer, pname: String, members: Array) -> 
 	row.add_child(members_label)
 
 	var btn := Button.new()
-	btn.text = "Установить"
-	btn.icon = _icon("Add")
 	btn.pressed.connect(_on_install_preset.bind(pname))
 	row.add_child(btn)
 
 	parent.add_child(row)
 	_dynamic_buttons.append(btn)
+	_preset_rows[pname] = {"button": btn, "members": members}
+	_update_preset_button(pname)
 
 func _build_row(parent: VBoxContainer, pkg: Dictionary) -> void:
 	var install_name: String = pkg.get("install_name", pkg.get("repo", "?"))
@@ -540,6 +542,42 @@ func _refresh_status() -> void:
 			_set_state(install_name, "installed", "есть папка")
 		else:
 			_set_state(install_name, "absent", "нет")
+	_refresh_presets()
+
+func _is_installed(install_name: String) -> bool:
+	if not _rows.has(install_name):
+		return false
+	return DirAccess.dir_exists_absolute(_install_path(install_name))
+
+func _refresh_presets() -> void:
+	for pname in _preset_rows.keys():
+		_update_preset_button(pname)
+
+func _update_preset_button(pname: String) -> void:
+	var entry: Dictionary = _preset_rows[pname]
+	var btn: Button = entry["button"]
+	var members: Array = entry["members"]
+	var total := members.size()
+	var installed := 0
+	for m in members:
+		if _is_installed(str(m)):
+			installed += 1
+	if total == 0:
+		btn.text = "пусто"
+		btn.icon = null
+		btn.disabled = true
+	elif installed >= total:
+		btn.text = "Установлено"
+		btn.icon = _icon("StatusSuccess")
+		btn.disabled = true
+	elif installed == 0:
+		btn.text = "Установить"
+		btn.icon = _icon("Add")
+		btn.disabled = false
+	else:
+		btn.text = "Доставить (%d)" % (total - installed)
+		btn.icon = _icon("Add")
+		btn.disabled = false
 
 func _set_state(install_name: String, state: String, text: String) -> void:
 	var row: Dictionary = _rows[install_name]
