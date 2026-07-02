@@ -20,6 +20,7 @@ const COL_YELLOW := Color(0.95, 0.8, 0.35)
 const COL_RED := Color(0.9, 0.45, 0.45)
 const COL_GRAY := Color(1, 1, 1, 0.5)
 const COL_WHITE := Color(1, 1, 1, 0.85)
+const COL_CATEGORY := Color(0.5, 0.78, 1.0)
 
 const KIND_GROUPS := [
 	{"kind": "studio", "title": "Студийные"},
@@ -206,19 +207,31 @@ func _add_foldable(parent: VBoxContainer, title_text: String, folded: bool) -> V
 func _build_preset_row(parent: VBoxContainer, pname: String, members: Array) -> void:
 	var row := HBoxContainer.new()
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var label := Label.new()
+
+	# Название категории отдельным цветом, чтобы не читалось как имя аддона.
+	var name_label := Label.new()
+	name_label.text = pname
+	name_label.add_theme_color_override("font_color", COL_CATEGORY)
+	name_label.custom_minimum_size = Vector2(92, 0)
+	name_label.tooltip_text = "Категория (набор аддонов)"
+	row.add_child(name_label)
+
 	var names: PackedStringArray = PackedStringArray()
 	for m in members:
 		names.append(str(m))
-	label.text = "%s: %s" % [pname, ", ".join(names)]
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(label)
+	var members_label := Label.new()
+	members_label.text = ", ".join(names)
+	members_label.modulate = Color(1, 1, 1, 0.6)
+	members_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	members_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(members_label)
+
 	var btn := Button.new()
 	btn.text = "Установить"
 	btn.icon = _icon("Add")
 	btn.pressed.connect(_on_install_preset.bind(pname))
 	row.add_child(btn)
+
 	parent.add_child(row)
 	_dynamic_buttons.append(btn)
 

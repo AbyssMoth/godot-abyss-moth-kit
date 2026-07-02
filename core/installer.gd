@@ -53,14 +53,20 @@ func install(pkg: Dictionary) -> String:
 		_rm_rf(tmp_extract)
 		return ""
 
-	# Атомарный swap: убираем старую установку и переносим временную на её место.
+	# Атомарный swap. Если старая установка была git-рабочей копией, сохраняем её .git,
+	# чтобы переустановка не рвала трекинг (GitHub Desktop и локальный git).
+	var git_stash := _stash_git(final_dir, parent, leaf)
 	_rm_rf(final_dir)
 	DirAccess.make_dir_recursive_absolute(parent)
 	var rename_err := DirAccess.rename_absolute(tmp_extract, final_dir)
 	if rename_err != OK:
 		_emit("  ошибка переноса в %s (err=%s)" % [final_dir, rename_err])
 		_rm_rf(tmp_extract)
+		_restore_git(git_stash, final_dir)
 		return ""
+	_restore_git(git_stash, final_dir)
+	if git_stash != "":
+		_emit("  .git сохранён - git-трекинг не потерян")
 
 	var version := _read_installed_version(final_dir)
 	var sha := ""
@@ -160,6 +166,27 @@ func _save_lock(lock: Dictionary) -> void:
 	if f != null:
 		f.store_string(JSON.stringify(lock, "\t"))
 		f.close()
+
+# Сохраняет .git существующей установки во временную папку, если это git-рабочая копия.
+func _stash_git(final_dir: String, parent: String, leaf: String) -> String:
+	var git_src := final_dir + "/.git"
+	if not DirAccess.dir_exists_absolute(git_src):
+		return ""
+	var stash := "%s/.%s__git_stash" % [parent, leaf]
+	_rm_rf(stash)
+	if DirAccess.rename_absolute(git_src, stash) == OK:
+		return stash
+	return ""
+
+# Возвращает ранее сохранённый .git внутрь свежей установки (или чистит, если папки нет).
+func _restore_git(stash: String, final_dir: String) -> void:
+	if stash == "" or not DirAccess.dir_exists_absolute(stash):
+		return
+	if DirAccess.dir_exists_absolute(final_dir):
+		DirAccess.rename_absolute(stash, final_dir + "/.git")
+	else:
+		_rm_rf(stash)
+
 
 # Рекурсивное удаление файла или папки по res:// пути.
 static func _rm_rf(path: String) -> void:
