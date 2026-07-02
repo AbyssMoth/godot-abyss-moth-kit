@@ -59,6 +59,20 @@
 			"description": "Слайсер атласов: сетка + авто по альфа-кляксам, рефреш с сохранением UID."
 		},
 		{
+			"name": "node_process_toggle",
+			"display_name": "Node Process Toggle",
+			"kind": "studio",
+			"owner": "AbyssMoth",
+			"repo": "godot-node-process-toggle",
+			"branch": "main",
+			"install_name": "node_process_toggle",
+			"plugin_dir": "abyss_moth/node_process_toggle",
+			"repository_url": "https://github.com/AbyssMoth/godot-node-process-toggle",
+			"library_style": false,
+			"public": true,
+			"description": "Чекбокс включения/выключения ноды в Inspector (аналог enabled/SetActive из Unity)."
+		},
+		{
 			"name": "godot_ai",
 			"display_name": "Godot AI (MCP)",
 			"kind": "external",
@@ -76,7 +90,7 @@
 		}
 	],
 	"presets": {
-		"base": ["reactive", "save", "export_sanitizer"],
+		"base": ["reactive", "save", "export_sanitizer", "node_process_toggle"],
 		"mobile_2d": ["reactive", "save"],
 		"dev_tools": ["godot_ai", "atlas_forge"]
 	}

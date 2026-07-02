@@ -1,0 +1,30 @@
+name: release
+
+# На каждый пуш тега вида v* собирает abyss_moth_kit.zip с правильной структурой
+# (addons/abyss_moth/abyss_moth_kit/...) и прикрепляет его к релизу. Художники ставят
+# этот zip через Godot AssetLib -> Импорт. Тело релиза берётся из .github/RELEASE_BODY.md.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build addon zip
+        run: git archive --format=zip --prefix=addons/abyss_moth/abyss_moth_kit/ HEAD -o abyss_moth_kit.zip
+
+      - name: Create release with asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: abyss_moth_kit.zip
+          body_path: .github/RELEASE_BODY.md
+          append_body: true
+          generate_release_notes: true
