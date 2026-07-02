@@ -47,6 +47,10 @@ var _confirm_dialog: ConfirmationDialog
 var _editor_dialog: AcceptDialog
 var _info_url := ""
 var _pending_uninstall := ""
+var _self_status: Label
+var _self_action: Button
+var _self_state := "unknown"
+var _self_latest := ""
 var _busy := false
 var _built := false
 
@@ -70,6 +74,8 @@ func _ready() -> void:
 	_build_static_ui()
 	_rebuild_dynamic()
 	_log("Готов. Аддонов в каталоге: %d." % _catalog.get("packages", []).size())
+	# Фоновая проверка обновления самого kit при открытии.
+	call_deferred("_background_self_check")
 
 # --- статичный каркас ---
 
@@ -94,6 +100,26 @@ func _build_static_ui() -> void:
 	hint.text = "Менеджер студийных аддонов"
 	hint.modulate = Color(1, 1, 1, 0.6)
 	add_child(hint)
+
+	# Строка самого kit: версия + статус обновления + кнопка самообновления.
+	var self_row := HBoxContainer.new()
+	add_child(self_row)
+	var self_name := Label.new()
+	self_name.text = "Abyss Moth Kit  v%s" % _self_version()
+	self_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	self_row.add_child(self_name)
+	_self_status = Label.new()
+	_self_status.custom_minimum_size = Vector2(74, 0)
+	_self_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_self_status.modulate = COL_GRAY
+	self_row.add_child(_self_status)
+	_self_action = Button.new()
+	_self_action.text = "Обновить себя"
+	_self_action.icon = _icon("Reload")
+	_self_action.visible = false
+	_self_action.pressed.connect(_on_self_update)
+	self_row.add_child(_self_action)
+	_static_buttons.append(_self_action)
 
 	add_child(HSeparator.new())
 
@@ -328,12 +354,17 @@ func _on_update_all() -> void:
 	if _busy:
 		_log("Занято, дождитесь завершения.")
 		return
+	# Сначала проверяем (отдельно кнопку проверки жать не нужно), потом обновляем найденное.
+	await _check_updates(false)
 	var pkgs: Array = []
 	for install_name in _rows.keys():
 		if _rows[install_name]["state"] == "update":
 			pkgs.append(_rows[install_name]["pkg"])
 	if pkgs.is_empty():
-		_log("Нет аддонов с доступным обновлением. Сначала нажмите Проверить обновления.")
+		if _self_state == "update":
+			_log("Обновлений пакетов нет. Для самого kit нажмите 'Обновить себя'.")
+		else:
+			_log("Всё актуально, обновлять нечего.")
 		return
 	await _install_batch(pkgs, true)
 
@@ -430,12 +461,21 @@ func _enable_installed(names: Array, restart_hits: Array) -> void:
 		_log("Подсказка: для [%s] перезапустите редактор (autoload / class_name-глобалы)." % ", ".join(PackedStringArray(restart_hits)))
 
 func _on_check_updates() -> void:
+	await _check_updates(false)
+
+# Проверка обновлений: сам kit + все установленные пакеты. silent=true - для фона
+# (минимум логов). Пока идёт проверка, кнопки заблокированы.
+func _check_updates(silent: bool) -> void:
 	if _busy:
-		_log("Занято, дождитесь завершения.")
+		if not silent:
+			_log("Занято, дождитесь завершения.")
 		return
 	_busy = true
 	_set_buttons_disabled(true)
-	_log("Проверка обновлений...")
+	if not silent:
+		_log("Проверка обновлений...")
+
+	await _check_self(silent)
 
 	var installed: Dictionary = _read_lock().get("installed", {})
 	var checked := 0
@@ -454,39 +494,122 @@ func _on_check_updates() -> void:
 			net_errors += 1
 			if r.get("offline", false):
 				_set_state(install_name, "offline", "нет сети")
-				_log("  %s: нет сети." % install_name)
+				if not silent:
+					_log("  %s: нет сети." % install_name)
 			else:
 				_set_state(install_name, "error", "ошибка")
-				_log("  %s: ошибка проверки." % install_name)
+				if not silent:
+					_log("  %s: ошибка проверки." % install_name)
 			continue
 		var remote_sha: String = r.get("sha", "")
 		if local_sha == "":
 			untracked += 1
 			_set_state(install_name, "untracked", "переустан.")
-			_log("  %s: версия не зафиксирована, переустановите (upstream %s)." % [install_name, remote_sha.substr(0, 7)])
+			if not silent:
+				_log("  %s: версия не зафиксирована, переустановите (upstream %s)." % [install_name, remote_sha.substr(0, 7)])
 		elif remote_sha == local_sha:
 			_set_state(install_name, "uptodate", "актуально")
-			_log("  %s: актуально (%s)." % [install_name, local_sha.substr(0, 7)])
+			if not silent:
+				_log("  %s: актуально (%s)." % [install_name, local_sha.substr(0, 7)])
 		else:
 			updates += 1
 			_set_state(install_name, "update", "обновление")
-			_log("  %s: обновление %s -> %s." % [install_name, local_sha.substr(0, 7), remote_sha.substr(0, 7)])
+			if not silent:
+				_log("  %s: обновление %s -> %s." % [install_name, local_sha.substr(0, 7), remote_sha.substr(0, 7)])
 
-	var summary := ""
-	if checked == 0:
-		summary = "Установленных аддонов нет."
-	else:
-		summary = "Проверено: %d. Обновлений: %d." % [checked, updates]
-		if updates == 0 and untracked == 0 and net_errors == 0:
-			summary += " Всё актуально."
-		if untracked > 0:
-			summary += " Без трекинга: %d." % untracked
-		if net_errors > 0:
-			summary += " Ошибок сети: %d." % net_errors
-	_log(summary)
+	if not silent:
+		var summary := ""
+		if checked == 0:
+			summary = "Установленных аддонов нет."
+		else:
+			summary = "Проверено: %d. Обновлений: %d." % [checked, updates]
+			if updates == 0 and untracked == 0 and net_errors == 0:
+				summary += " Всё актуально."
+			if untracked > 0:
+				summary += " Без трекинга: %d." % untracked
+			if net_errors > 0:
+				summary += " Ошибок сети: %d." % net_errors
+		_log(summary)
+	elif updates > 0 or _self_state == "update":
+		_log("Найдены обновления. Нажмите Обновить все или Обновить себя.")
 
 	_set_buttons_disabled(false)
 	_busy = false
+
+func _check_self(silent: bool) -> void:
+	if _self_status == null:
+		return
+	var sp := _self_pkg()
+	var r: Dictionary = await _version_check.get_latest_tag(sp["owner"], sp["repo"])
+	var local := _self_version()
+	if not r.get("ok", false):
+		_self_state = "offline" if r.get("offline", false) else "error"
+		_self_status.text = "нет сети" if r.get("offline", false) else "?"
+		_self_status.modulate = COL_GRAY
+		_self_action.visible = false
+		return
+	var latest: String = str(r.get("tag", ""))
+	_self_latest = latest
+	if latest != "" and VersionCheck.version_gt(latest, local):
+		_self_state = "update"
+		_self_status.text = "-> v%s" % latest
+		_self_status.modulate = COL_YELLOW
+		_self_action.visible = true
+		if not silent:
+			_log("Abyss Moth Kit: доступно обновление v%s -> v%s." % [local, latest])
+	else:
+		_self_state = "uptodate"
+		_self_status.text = "актуально"
+		_self_status.modulate = COL_GREEN
+		_self_action.visible = false
+		if not silent:
+			_log("Abyss Moth Kit: актуально (v%s)." % local)
+
+func _background_self_check() -> void:
+	if _busy:
+		return
+	await _check_self(false)
+
+func _on_self_update() -> void:
+	if _busy:
+		_log("Занято, дождитесь завершения.")
+		return
+	_busy = true
+	_set_buttons_disabled(true)
+	_log("Обновление Abyss Moth Kit до v%s..." % _self_latest)
+	# lock (что установлено) лежит внутри папки kit и стирается swap-ом - сохраняем и вернём.
+	var saved_lock := _read_lock()
+	var ok_name: String = await _installer.install(_self_pkg())
+	if ok_name != "":
+		var f := FileAccess.open(LOCK_PATH, FileAccess.WRITE)
+		if f != null:
+			f.store_string(JSON.stringify(saved_lock, "\t"))
+			f.close()
+		var efs := EditorInterface.get_resource_filesystem()
+		if not efs.is_scanning():
+			efs.scan()
+		_self_action.visible = false
+		_log("Abyss Moth Kit обновлён (lock сохранён, каталог обновлён из репо). ПЕРЕЗАПУСТИТЕ РЕДАКТОР.")
+	else:
+		_log("Не удалось обновить kit.")
+	_set_buttons_disabled(false)
+	_busy = false
+
+func _self_version() -> String:
+	var cf := ConfigFile.new()
+	if cf.load("res://addons/abyss_moth/abyss_moth_kit/plugin.cfg") == OK:
+		return str(cf.get_value("plugin", "version", ""))
+	return "?"
+
+func _self_pkg() -> Dictionary:
+	return {
+		"owner": "AbyssMoth",
+		"repo": "godot-abyss-moth-kit",
+		"branch": "main",
+		"install_name": "abyss_moth_kit",
+		"plugin_dir": "abyss_moth/abyss_moth_kit",
+		"display_name": "Abyss Moth Kit",
+	}
 
 func _on_show_info(install_name: String) -> void:
 	var pkg: Dictionary = _rows[install_name]["pkg"]
