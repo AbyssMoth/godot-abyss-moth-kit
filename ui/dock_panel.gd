@@ -59,7 +59,9 @@ func _ready() -> void:
 		return
 	_built = true
 	name = "Abyss Moth"
-	custom_minimum_size = Vector2(320, 0)
+	# Умеренный min-width: на мелких экранах правый док (вместе с Inspector)
+	# должен сворачиваться уже. Список аддонов при нехватке ширины скроллится.
+	custom_minimum_size = Vector2(240, 0)
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 	_http = HTTPRequest.new()

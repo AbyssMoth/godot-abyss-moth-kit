@@ -4,7 +4,7 @@
 	"packages": [
 		{
 			"name": "reactive",
-			"display_name": "Godot Reactive",
+			"display_name": "Reactive",
 			"kind": "studio",
 			"owner": "AbyssMoth",
 			"repo": "godot-reactive",
@@ -18,7 +18,7 @@
 		},
 		{
 			"name": "save",
-			"display_name": "Godot Save",
+			"display_name": "Save",
 			"kind": "studio",
 			"owner": "AbyssMoth",
 			"repo": "godot-save",
@@ -73,8 +73,23 @@
 			"description": "Чекбокс включения/выключения ноды в Inspector (аналог enabled/SetActive из Unity)."
 		},
 		{
+			"name": "promo_shot",
+			"display_name": "Promo Shot",
+			"kind": "studio",
+			"owner": "AbyssMoth",
+			"repo": "godot-promo-shot",
+			"branch": "main",
+			"install_name": "promo_shot",
+			"plugin_dir": "abyss_moth/promo_shot",
+			"repository_url": "https://github.com/AbyssMoth/godot-promo-shot",
+			"library_style": false,
+			"declares_autoloads": true,
+			"public": true,
+			"description": "Промо-скриншоты одной клавишей: enum-пресеты площадок (YouTube/Steam/itch.io/Google Play/соцсети), скрытие debug-нод, авто-папка с .gitignore, конвертация в JPG/WEBP и рекордер через ffmpeg. API PromoShot.capture()."
+		},
+		{
 			"name": "godot_ai",
-			"display_name": "Godot AI (MCP)",
+			"display_name": "AI (MCP)",
 			"kind": "external",
 			"owner": "hi-godot",
 			"repo": "godot-ai",
@@ -92,6 +107,7 @@
 	"presets": {
 		"base": ["reactive", "save", "export_sanitizer", "node_process_toggle"],
 		"mobile_2d": ["reactive", "save"],
-		"dev_tools": ["godot_ai", "atlas_forge"]
+		"dev_tools": ["godot_ai", "atlas_forge"],
+		"promo": ["promo_shot"]
 	}
 }
