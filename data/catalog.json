@@ -117,12 +117,27 @@
 			"library_style": false,
 			"public": true,
 			"description": "Редактор скриптов как IDE: вкладки вместо списка, Outline со всеми членами класса и иконками, быстрый поиск, навигация с клавиатуры. Автор Marius Hanl, лицензия MIT. Ветка master."
+		},
+		{
+			"name": "gdscript_linter",
+			"display_name": "GDScript Linter",
+			"kind": "fork",
+			"owner": "AbyssMoth",
+			"repo": "godot-gdscript-linter",
+			"branch": "main",
+			"install_name": "gdscript_linter",
+			"plugin_dir": "gdscript-linter",
+			"source_subdir": "addons/gdscript-linter",
+			"repository_url": "https://github.com/AbyssMoth/godot-gdscript-linter",
+			"library_style": false,
+			"public": true,
+			"description": "Статический анализатор GDScript: качество кода, техдолг, кликабельная навигация, CLI для CI. Форк graydwarf/godot-gdscript-linter с правками студии (локализация, targeted scan, reflection-чек под gdmaim). Лицензия MIT."
 		}
 	],
 	"presets": {
 		"base": ["reactive", "save", "export_sanitizer", "node_process_toggle"],
 		"mobile_2d": ["reactive", "save"],
-		"dev_tools": ["godot_ai", "atlas_forge", "script_ide"],
+		"dev_tools": ["godot_ai", "atlas_forge", "script_ide", "gdscript_linter"],
 		"promo": ["promo_shot"]
 	}
 }
