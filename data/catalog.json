@@ -102,12 +102,27 @@
 			"declares_autoloads": true,
 			"public": true,
 			"description": "MCP-мост редактор <-> AI (dev-инструмент). Ставится только editor-аддон в addons/godot_ai; сам MCP-сервер запускается через uvx отдельно."
+		},
+		{
+			"name": "script_ide",
+			"display_name": "Script IDE",
+			"kind": "external",
+			"owner": "Maran23",
+			"repo": "script-ide",
+			"branch": "master",
+			"install_name": "script_ide",
+			"plugin_dir": "script-ide",
+			"source_subdir": "addons/script-ide",
+			"repository_url": "https://github.com/Maran23/script-ide",
+			"library_style": false,
+			"public": true,
+			"description": "Редактор скриптов как IDE: вкладки вместо списка, Outline со всеми членами класса и иконками, быстрый поиск, навигация с клавиатуры. Автор Marius Hanl, лицензия MIT. Ветка master."
 		}
 	],
 	"presets": {
 		"base": ["reactive", "save", "export_sanitizer", "node_process_toggle"],
 		"mobile_2d": ["reactive", "save"],
-		"dev_tools": ["godot_ai", "atlas_forge"],
+		"dev_tools": ["godot_ai", "atlas_forge", "script_ide"],
 		"promo": ["promo_shot"]
 	}
 }
