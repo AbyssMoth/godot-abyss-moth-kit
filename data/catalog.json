@@ -132,12 +132,43 @@
 			"library_style": false,
 			"public": true,
 			"description": "Статический анализатор GDScript: качество кода, техдолг, кликабельная навигация, CLI для CI. Форк graydwarf/godot-gdscript-linter с правками студии (локализация, targeted scan, reflection-чек под gdmaim). Лицензия MIT."
+		},
+		{
+			"name": "gdmaim",
+			"display_name": "GDMaim (обфускатор)",
+			"kind": "external",
+			"owner": "cherriesandmochi",
+			"repo": "gdmaim",
+			"branch": "main",
+			"install_name": "gdmaim",
+			"plugin_dir": "gdmaim",
+			"source_subdir": "addons/gdmaim",
+			"repository_url": "https://github.com/cherriesandmochi/gdmaim",
+			"library_style": false,
+			"public": true,
+			"description": "Обфускация GDScript при экспорте. Автор cherriesandmochi, лицензия MIT. Работает как export-плагин, в сборку попадает обфусцированный код, а сам аддон вырезается санитайзером."
+		},
+		{
+			"name": "godot_cas",
+			"display_name": "Godot CAS (монетизация)",
+			"kind": "fork",
+			"owner": "RimuruDev",
+			"repo": "godot-cas",
+			"branch": "main",
+			"install_name": "godot_cas",
+			"plugin_dir": "godot_cas",
+			"source_subdir": "addons/godot_cas",
+			"repository_url": "https://github.com/RimuruDev/godot-cas",
+			"library_style": false,
+			"public": true,
+			"description": "Реклама CAS.AI для Android: export-плагин, который упаковывает AAR и зависимости CAS SDK в сборку. Форк damnedpie/godot-cas, лицензия MIT. РАНТАЙМ: не вносить в исключения санитайзера. AAR пересобирается в репо через tools/cas.py."
 		}
 	],
 	"presets": {
 		"base": ["reactive", "save", "export_sanitizer", "node_process_toggle"],
 		"mobile_2d": ["reactive", "save"],
-		"dev_tools": ["godot_ai", "atlas_forge", "script_ide", "gdscript_linter"],
-		"promo": ["promo_shot"]
+		"dev_tools": ["godot_ai", "atlas_forge", "script_ide", "gdscript_linter", "gdmaim"],
+		"promo": ["promo_shot"],
+		"monetization": ["godot_cas"]
 	}
 }
