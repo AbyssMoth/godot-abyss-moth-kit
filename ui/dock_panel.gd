@@ -36,6 +36,12 @@ var _folder_init
 var _logger
 
 var _catalog: Dictionary = {}
+## Время правки catalog.json на момент последней загрузки. Док строится один
+## раз и живёт часами, а файлы kit переписывают под ним: самообновление, git
+## pull, правка каталога руками. Сравниваем на каждой проверке, иначе список
+## внизу показывает прошлое.
+var _catalog_stamp: int = 0
+var _self_name: Label
 var _rows: Dictionary = {}
 var _preset_rows: Dictionary = {}
 var _static_buttons: Array = []
@@ -73,6 +79,7 @@ func _ready() -> void:
 	_folder_init = FolderInit.new(Callable(self, "_log"))
 
 	_catalog = CatalogStore.load_catalog()
+	_catalog_stamp = _catalog_stamp_now()
 	_build_static_ui()
 	_rebuild_dynamic()
 	_log("Готов. Аддонов в каталоге: %d." % _catalog.get("packages", []).size())
@@ -106,10 +113,10 @@ func _build_static_ui() -> void:
 	# Строка самого kit: версия + статус обновления + кнопка самообновления.
 	var self_row := HBoxContainer.new()
 	add_child(self_row)
-	var self_name := Label.new()
-	self_name.text = "Abyss Moth Kit  v%s" % _self_version()
-	self_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	self_row.add_child(self_name)
+	_self_name = Label.new()
+	_self_name.text = "Abyss Moth Kit  v%s" % _self_version()
+	_self_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	self_row.add_child(_self_name)
 	_self_status = Label.new()
 	_self_status.custom_minimum_size = Vector2(74, 0)
 	_self_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -330,7 +337,27 @@ func _on_catalog_changed() -> void:
 
 func _reload_catalog() -> void:
 	_catalog = CatalogStore.load_catalog()
+	_catalog_stamp = _catalog_stamp_now()
 	_rebuild_dynamic()
+
+func _catalog_stamp_now() -> int:
+	return int(FileAccess.get_modified_time(CatalogStore.CATALOG_PATH))
+
+## Подтягивает в док то, что реально лежит на диске: версию самого kit в шапке
+## и каталог. Без этого док рапортует "актуально (v0.10.0)" в лог, продолжая
+## рисовать v0.9.0 и старый список - версию и каталог он читает с диска, а
+## подписи и строки строил один раз при создании.
+func _sync_from_disk(silent: bool) -> void:
+	if _self_name != null:
+		_self_name.text = "Abyss Moth Kit  v%s" % _self_version()
+	var stamp := _catalog_stamp_now()
+	if stamp == _catalog_stamp:
+		return
+	_catalog_stamp = stamp
+	_catalog = CatalogStore.load_catalog()
+	_rebuild_dynamic()
+	if not silent:
+		_log("Каталог изменился на диске, перечитан. Пакетов: %d." % _catalog.get("packages", []).size())
 
 # --- действия ---
 
@@ -473,9 +500,12 @@ func _check_updates(silent: bool) -> void:
 			_log("Занято, дождитесь завершения.")
 		return
 	_busy = true
-	_set_buttons_disabled(true)
 	if not silent:
 		_log("Проверка обновлений...")
+	# До блокировки кнопок: _rebuild_dynamic() пересоздаёт строки, и гасить
+	# надо уже новые, иначе они останутся живыми на время проверки.
+	_sync_from_disk(silent)
+	_set_buttons_disabled(true)
 
 	await _check_self(silent)
 
